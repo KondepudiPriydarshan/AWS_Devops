@@ -1,0 +1,13 @@
+
+Configures load balancing and routing to app01.
+
+---
+
+## í³œ Tomcat Setup (app01)
+Includes:
+- Maven installation  
+- Application artifact deployment  
+- Tomcat systemd service  
+- Environment configuration  
+
+
