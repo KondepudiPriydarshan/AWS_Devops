@@ -1,0 +1,12 @@
+Client
+  |
+  v
+Application Load Balancer
+  |
+  v
+Target Group
+  |
+  v
+EC2 Instance 1 (Apache)
+EC2 Instance 2 (Apache)
+
