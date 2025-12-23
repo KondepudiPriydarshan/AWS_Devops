@@ -1,0 +1,40 @@
+                     ┌───────────────────────┐
+                     │        Users           │
+                     └───────────┬───────────┘
+                                 │
+                          HTTPS Requests
+                                 │
+                     ┌───────────▼───────────┐
+                     │     AWS CloudFront     │
+                     │  (Content Delivery)   │
+                     └───────────┬───────────┘
+                                 │
+                     ┌───────────▼───────────┐
+                     │ Application Load       │
+                     │ Balancer (ALB)         │
+                     │ + Session Stickiness   │
+                     └───────────┬───────────┘
+                                 │
+                  ┌──────────────▼──────────────┐
+                  │     Auto Scaling Group       │
+                  │   (Min 2 EC2 Instances)     │
+                  │                              │
+                  │  Elastic Beanstalk (Tomcat) │
+                  │  Java App (VProfile)        │
+                  └──────────────┬──────────────┘
+                                 │
+        ┌────────────────────────┼────────────────────────┐
+        │                        │                        │
+┌───────▼────────┐     ┌─────────▼─────────┐     ┌────────▼────────┐
+│  Amazon RDS     │     │  Amazon ElastiCache│     │   Amazon MQ     │
+│  MySQL Database │     │   (Cache Layer)    │     │  (RabbitMQ)     │
+│ (Private SG)    │     │  (Private SG)      │     │  (Private SG)   │
+└────────────────┘     └────────────────────┘     └─────────────────┘
+
+                         ▲
+                         │
+                ┌────────┴────────┐
+                │   Amazon S3     │
+                │  (WAR Artifact) │
+                └─────────────────┘
+
