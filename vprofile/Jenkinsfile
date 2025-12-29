@@ -1,121 +1,196 @@
 pipeline {
-    
-	agent any
-/*	
-	tools {
-        maven "maven3"
-    }
-*/	
+    agent any
     environment {
-        NEXUS_VERSION = "nexus3"
-        NEXUS_PROTOCOL = "http"
-        NEXUS_URL = "172.31.40.209:8081"
-        NEXUS_REPOSITORY = "vprofile-release"
-	NEXUS_REPO_ID    = "vprofile-release"
-        NEXUS_CREDENTIAL_ID = "nexuslogin"
-        ARTVERSION = "${env.BUILD_ID}"
+        AWS_REGION = "us-east-1"
+        AWS_ACCOUNT_ID = "891249033661"
+        ECR_REPO = "vprofileappimage"
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        ECR_URI = "${ECR_REGISTRY}/${ECR_REPO}"
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
-	
-    stages{
+
+    tools {
+        maven 'maven-3.9.9'
+        jdk 'JDK-17'
+    }
+
+    stages {
+        stage('fetch code') {
+            steps {
+                git branch: 'main', url: 'https://github.com/KondepudiPriydarshan/AWS_Devops.git'
+                echo 'Code fetched successfully.'
+            }
+        }
         
-        stage('BUILD'){
+        stage('Build') {
             steps {
-                sh 'mvn clean install -DskipTests'
-            }
-            post {
-                success {
-                    echo 'Now Archiving...'
-                    archiveArtifacts artifacts: '**/target/*.war'
+                dir('vprofile') {   
+                sh 'mvn install'
                 }
             }
         }
-
-	stage('UNIT TEST'){
+        
+        stage('post-build') {
             steps {
+                dir('vprofile') {   
+                sh 'mkdir -p version'
+                sh 'cp -r target/*.war version/'
+                }
+            }
+        }
+        
+        stage('unit test') {
+            steps {
+                dir('vprofile') {   
                 sh 'mvn test'
-            }
-        }
-
-	stage('INTEGRATION TEST'){
-            steps {
-                sh 'mvn verify -DskipUnitTests'
-            }
-        }
-		
-        stage ('CODE ANALYSIS WITH CHECKSTYLE'){
-            steps {
-                sh 'mvn checkstyle:checkstyle'
-            }
-            post {
-                success {
-                    echo 'Generated Analysis Result'
                 }
             }
         }
-
-        stage('CODE ANALYSIS with SONARQUBE') {
-          
-		  environment {
-             scannerHome = tool 'sonarscanner4'
-          }
-
-          steps {
-            withSonarQubeEnv('sonar-pro') {
-               sh '''${scannerHome}/bin/sonar-scanner -Dsonar.projectKey=vprofile \
-                   -Dsonar.projectName=vprofile-repo \
-                   -Dsonar.projectVersion=1.0 \
-                   -Dsonar.sources=src/ \
-                   -Dsonar.java.binaries=target/test-classes/com/visualpathit/account/controllerTest/ \
-                   -Dsonar.junit.reportsPath=target/surefire-reports/ \
-                   -Dsonar.jacoco.reportsPath=target/jacoco.exec \
-                   -Dsonar.java.checkstyle.reportPaths=target/checkstyle-result.xml'''
-            }
-
-            timeout(time: 10, unit: 'MINUTES') {
-               waitForQualityGate abortPipeline: true
-            }
-          }
-        }
-
-        stage("Publish to Nexus Repository Manager") {
+        stage('checkstyle analysis') {  
             steps {
+                dir('vprofile') {                   
+                sh 'mvn checkstyle:checkstyle'
+                 }
+            }
+        }
+        
+        stage('SonarQube Analysis') {
+            steps {
+                dir('vprofile') {
                 script {
-                    pom = readMavenPom file: "pom.xml";
-                    filesByGlob = findFiles(glob: "target/*.${pom.packaging}");
-                    echo "${filesByGlob[0].name} ${filesByGlob[0].path} ${filesByGlob[0].directory} ${filesByGlob[0].length} ${filesByGlob[0].lastModified}"
-                    artifactPath = filesByGlob[0].path;
-                    artifactExists = fileExists artifactPath;
-                    if(artifactExists) {
-                        echo "*** File: ${artifactPath}, group: ${pom.groupId}, packaging: ${pom.packaging}, version ${pom.version} ARTVERSION";
+                    def scannerHome = tool 'sonar6.2'
+                    withSonarQubeEnv('sonarserver') {
+                        sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.projectKey=vprofile \
+                        -Dsonar.projectName=vprofile \
+                        -Dsonar.sources=src/main/java \
+                        -Dsonar.tests=src/test/java \
+                        -Dsonar.java.binaries=target/classes \
+                        -Dsonar.junit.reportPaths=target/surefire-reports \
+                        -Dsonar.coverage.jacoco.xmlReportPaths=target/site/jacoco/jacoco.xml \
+                        -Dsonar.checkstyle.reportPaths=target/checkstyle-result.xml
+                        """
+                    }
+                }
+                }
+            }
+        }
+        
+        stage('Quality Gate') {
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        
+        stage('Upload Artifact to Nexus') {
+            steps {
+                dir('vprofile') {
+                    script {
+                        def warFile = sh(
+                            script: "ls target/*.war | head -n 1",
+                            returnStdout: true
+                        ).trim()
+                        
+                        echo "Uploading artifact: ${warFile}"
+                        
                         nexusArtifactUploader(
-                            nexusVersion: NEXUS_VERSION,
-                            protocol: NEXUS_PROTOCOL,
-                            nexusUrl: NEXUS_URL,
-                            groupId: pom.groupId,
-                            version: ARTVERSION,
-                            repository: NEXUS_REPOSITORY,
-                            credentialsId: NEXUS_CREDENTIAL_ID,
+                            nexusVersion: 'nexus3',
+                            protocol: 'http',
+                            nexusUrl: '172.31.43.158:8081',
+                            groupId: 'com.visualpathit',
+                            version: "1.0.${BUILD_NUMBER}, ${BUILD_TIMESTAMP}",
+                            repository: 'artifact-repository',
+                            credentialsId: 'nexus-admin-login',
                             artifacts: [
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: artifactPath,
-                                type: pom.packaging],
-                                [artifactId: pom.artifactId,
-                                classifier: '',
-                                file: "pom.xml",
-                                type: "pom"]
+                                [
+                                    artifactId: 'vprofile',
+                                    classifier: '',
+                                    file: warFile,
+                                    type: 'war'
+                                ]
                             ]
-                        );
-                    } 
-		    else {
-                        error "*** File: ${artifactPath}, could not be found";
+                        )
                     }
                 }
             }
         }
+        stage('Docker Build') {
+            steps {
+                dir('vprofile/Docker-files/app/multistage') {
+                sh '''
+                docker build -t $ECR_REPO:$IMAGE_TAG .
+                '''
+                }
+            }
+        }
+        stage('Login to ECR') {
+                steps {
+                    withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+                        sh '''
+                        aws ecr get-login-password --region $AWS_REGION \
+                        | docker login --username AWS --password-stdin $ECR_URI
+                        '''
+                    }
+                }
+        }
+        stage('Tag & Push Image') {
+                steps {
+                    sh '''
+                    docker tag ${ECR_REPO}:${IMAGE_TAG} ${ECR_URI}:${IMAGE_TAG}
+                docker tag ${ECR_REPO}:${IMAGE_TAG} ${ECR_URI}:latest
 
+                docker push ${ECR_URI}:${IMAGE_TAG}
+                docker push ${ECR_URI}:latest
+                    '''
+                }
+        }
+        stage('Deploy to ECS') {
+            steps {
+                withCredentials([[$class: 'AmazonWebServicesCredentialsBinding', credentialsId: 'aws-creds']]) {
+                    sh '''
+                    aws ecs update-service \
+                    --cluster Vprof-cluster \
+                    --service vprof-service  \
+                    --force-new-deployment \
+                    --region us-east-1
+                    '''
+                    }
+            }
+        }
+    }
+    post {  
+        success {
+            slackSend(
+                channel: '#all-aws',
+                color: 'good',
+                botUser: true,
+                message: """
+                ✅ *BUILD SUCCESS*
+                Job: ${env.JOB_NAME}
+                Build: #${env.BUILD_NUMBER}
+                Version: ${env.ARTIFACT_VERSION}
+                """
+            )
+        }
 
+        failure {
+            slackSend(
+                channel: '#all-aws',
+                color: 'danger',
+                botUser: true,
+                message: """
+                ❌ *BUILD FAILED*
+                Job: ${env.JOB_NAME}
+                Build: #${env.BUILD_NUMBER}
+                Check Jenkins logs.
+                """
+            )
+        }
+        
     }
 
-
 }
+
