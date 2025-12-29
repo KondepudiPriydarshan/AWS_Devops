@@ -3,6 +3,7 @@ sudo useradd --home-dir /opt/tomcat --shell /sbin/nologin tomcat
 sudo yum install java-17-openjdk -y 
 sudo wget -P /tmp https://dlcdn.apache.org/tomcat/tomcat-10/v10.1.49/bin/apache-tomcat-10.1.49.tar.gz
 sudo tar -xzvf /tmp/apache-tomcat-10.1.49.tar.gz -C /tmp
+sudo mkdir /opt/tomcat
 sudo cp -r /tmp/apache-tomcat-10.1.49/* /opt/tomcat/
 sudo chown -R tomcat:tomcat /opt/tomcat
 sudo bash -c 'cat > /etc/systemd/system/tomcat.service << EOF

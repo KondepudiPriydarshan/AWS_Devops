@@ -1,0 +1,28 @@
+GitHub
+  |
+  |  Webhook / Poll / Remote Trigger
+  v
+Jenkins
+  |
+  |-- Maven Build + Tests
+  |-- Checkstyle
+  |-- SonarQube (Quality Gate)
+  |
+  v
+Nexus Repository
+  |
+  v
+Docker Build
+  |
+  v
+AWS ECR
+  |
+  v
+AWS ECS
+  |
+  v
+Application Live
+  |
+  v
+Slack Notifications
+
