@@ -1,0 +1,99 @@
+name: Build WF
+on: 
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v6
+
+      - name: Maven Build
+        run: mvn install
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: vprof
+          path: target/*.war
+      
+      - name: Notify Build Success
+        if: success()
+        run: echo "Build Succeeded!"
+
+  testing:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v6
+
+      - name: Running test on main branches
+        if: github.ref == 'refs/heads/main'
+        run: mvn test
+      
+      - name: Running checkstyle on main branches
+        if: github.ref == 'refs/heads/main'
+        run: mvn checkstyle:checkstyle
+
+      - name: Running tests on other branches
+        if: github.ref != 'refs/heads/main'
+        run: echo "Tests are skipped on non-main branches"
+  
+  Security-Scan:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v6
+
+      - name: Run Security Scan using trivy-scan
+        uses: aquasecurity/trivy-action@0.33.1
+        with:
+          scan-type: 'fs'
+          scan refs: '.'
+          format: 'json'
+          output: 'trivy-report.json'
+          exit code: '0'
+          vuln-type: 'os,library'
+      
+      - name: Upload Security Scan Report
+        uses: actions/upload-artifact@v6  
+        with:
+          name: trivy-report
+          path: trivy-report.json
+  
+  Build_And_Push_Docker_Image:
+    runs-on: ubuntu-latest
+    environment: AWS
+    needs: [build, Security-Scan, testing]
+    if : github.ref == 'refs/heads/main'
+    steps:
+      - name: Code checkout
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET }}
+          aws-region: us-east-1
+        
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, Tag, and Push Docker Image to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: vprof-git
+          IMAGE_TAG: latest
+        run: |
+          docker build -f Docker-files/app/multistage/Dockerfile -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
